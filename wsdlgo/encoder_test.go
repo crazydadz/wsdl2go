@@ -39,15 +39,19 @@ func LoadDefinition(t *testing.T, filename string, want error) *wsdl.Definitions
 }
 
 var EncoderCases = []struct {
-	F string
-	G string
-	E error
+	F                  string
+	G                  string
+	E                  error
+	NoInterfacePointer *bool
+	InlineNS           *bool
 }{
 	{F: "broken.wsdl", E: io.EOF},
 	{F: "w3cexample1.wsdl", G: "w3cexample1.golden", E: nil},
 	{F: "w3cexample2.wsdl", G: "w3cexample2.golden", E: nil},
 	{F: "w3example1.wsdl", G: "w3example1.golden", E: nil},
 	{F: "w3example2.wsdl", G: "w3example2.golden", E: nil},
+	{F: "w3example2.wsdl", G: "w3example2.golden", E: nil, NoInterfacePointer: &boolTrue},
+	{F: "w3example2.wsdl", G: "w3example2_inline_ns.golden", E: nil, InlineNS: &boolTrue},
 	{F: "soap12wcf.wsdl", G: "soap12wcf.golden", E: nil},
 	{F: "memcache.wsdl", G: "memcache.golden", E: nil},
 	{F: "importer.wsdl", G: "memcache.golden", E: nil},
@@ -83,7 +87,16 @@ func TestEncoder(t *testing.T) {
 		var err error
 		var want []byte
 		var have bytes.Buffer
-		err = NewEncoder(&have).Encode(d)
+		enc := NewEncoder(&have)
+
+		if tc.NoInterfacePointer != nil {
+			enc.SetNoInterfacePointer(*tc.NoInterfacePointer)
+		}
+		if tc.InlineNS != nil {
+			enc.SetInlineTargetNamespace(*tc.InlineNS)
+		}
+
+		err = enc.Encode(d)
 		if err != nil {
 			t.Errorf("test %d, encoding %q: %v", i, tc.F, err)
 		}
@@ -131,3 +144,5 @@ func Diff(prefix, ext string, a, b []byte) error {
 	}
 	return nil
 }
+
+var boolTrue = true

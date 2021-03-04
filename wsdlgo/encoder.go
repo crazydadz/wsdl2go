@@ -46,6 +46,12 @@ type Encoder interface {
 	// SetLocalNamespace allows overriding of the Namespace in XMLName instead
 	// of the one specified in wsdl
 	SetLocalNamespace(namespace string)
+
+	// SetInlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
+	SetInlineTargetNamespace(inline bool)
+
+	// SetNoInterfacePointer generates interface types without pointer
+	SetNoInterfacePointer(noInterfacePointer bool)
 }
 
 type goEncoder struct {
@@ -88,6 +94,12 @@ type goEncoder struct {
 
 	// localNamespace allows overriding of namespace in XMLName
 	localNamespace string
+
+	// inlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
+	inlineTargetNamespace bool
+
+	// noInterfacePointer generates interface types without pointer
+	noInterfacePointer bool
 }
 
 // NewEncoder creates and initializes an Encoder that generates code to w.
@@ -370,6 +382,25 @@ func (ge *goEncoder) cacheTypes(d *wsdl.Definitions) {
 	// cache elements from complex types
 	for _, ct := range ge.ctypes {
 		ge.cacheComplexTypeElements(ct)
+
+		// Identify go interface type
+		identifyGoInterfaceType(ct)
+	}
+}
+
+func identifyGoInterfaceType(ct *wsdl.ComplexType) {
+	if ct.Abstract {
+		ct.IsGoInterfaceType = true
+	}
+	if ct.Sequence != nil && ct.Sequence.Any != nil {
+		if len(ct.Sequence.Elements) == 0 {
+			ct.IsGoInterfaceSliceType = true
+		}
+	}
+	if ct.Choice != nil && ct.Choice.Any != nil {
+		if len(ct.Choice.Elements) == 0 {
+			ct.IsGoInterfaceSliceType = true
+		}
 	}
 }
 
@@ -1036,6 +1067,10 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	case "anysequence", "anytype", "anysimpletype":
 		return "interface{}"
 	default:
+		// no interface pointer
+		if t, exists := ge.ctypes[v]; ge.noInterfacePointer && exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
+			return goSymbol(v)
+		}
 		return "*" + goSymbol(v)
 	}
 }
@@ -1312,21 +1347,13 @@ func (ge *goEncoder) genGoStruct(w io.Writer, d *wsdl.Definitions, ct *wsdl.Comp
 
 	name := goSymbol(ct.Name)
 	ge.writeComments(w, name, ct.Doc)
-	if ct.Abstract {
+	if ct.IsGoInterfaceType {
 		fmt.Fprintf(w, "type %s interface{}\n\n", name)
 		return nil
 	}
-	if ct.Sequence != nil && ct.Sequence.Any != nil {
-		if len(ct.Sequence.Elements) == 0 {
-			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
-			return nil
-		}
-	}
-	if ct.Choice != nil && ct.Choice.Any != nil {
-		if len(ct.Choice.Elements) == 0 {
-			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
-			return nil
-		}
+	if ct.IsGoInterfaceSliceType {
+		fmt.Fprintf(w, "type %s []interface{}\n\n", name)
+		return nil
 	}
 	if ct.ComplexContent != nil {
 		restr := ct.ComplexContent.Restriction
@@ -1410,7 +1437,7 @@ func (ge *goEncoder) genStructFields(w io.Writer, d *wsdl.Definitions, ct *wsdl.
 		return err
 	}
 
-	return ge.genElements(w, ct)
+	return ge.genElements(w, ct, d)
 }
 
 func (ge *goEncoder) genOpStructMessage(w io.Writer, d *wsdl.Definitions, name string, message *wsdl.Message) {
@@ -1449,7 +1476,7 @@ func (ge *goEncoder) genOpStructMessage(w io.Writer, d *wsdl.Definitions, name s
 			Name:    partName,
 			Type:    wsdlType,
 			// TODO: Maybe one could make guesses about nillable?
-		})
+		}, d)
 	}
 
 	fmt.Fprintf(w, "}\n\n")
@@ -1494,13 +1521,13 @@ func (ge *goEncoder) genComplexContent(w io.Writer, d *wsdl.Definitions, ct *wsd
 	}
 	for _, seq := range sequences {
 		for _, v := range seq.ComplexTypes {
-			err := ge.genElements(w, v)
+			err := ge.genElements(w, v, d)
 			if err != nil {
 				return err
 			}
 		}
 		for _, v := range seq.Elements {
-			ge.genElementField(w, v)
+			ge.genElementField(w, v, d)
 		}
 
 	}
@@ -1525,7 +1552,7 @@ func (ge *goEncoder) genSimpleContent(w io.Writer, d *wsdl.Definitions, ct *wsdl
 			ge.genElementField(w, &wsdl.Element{
 				Type: trimns(ext.Base),
 				Name: "Content",
-			})
+			}, d)
 		}
 	}
 
@@ -1537,23 +1564,23 @@ func (ge *goEncoder) genSimpleContent(w io.Writer, d *wsdl.Definitions, ct *wsdl
 	return nil
 }
 
-func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType) error {
+func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType, d *wsdl.Definitions) error {
 	for _, el := range ct.AllElements {
-		ge.genElementField(w, el)
+		ge.genElementField(w, el, d)
 	}
 	if ct.Sequence != nil {
 		for _, el := range ct.Sequence.Elements {
-			ge.genElementField(w, el)
+			ge.genElementField(w, el, d)
 		}
 		for _, choice := range ct.Sequence.Choices {
 			for _, el := range choice.Elements {
-				ge.genElementField(w, el)
+				ge.genElementField(w, el, d)
 			}
 		}
 	}
 	if ct.Choice != nil {
 		for _, el := range ct.Choice.Elements {
-			ge.genElementField(w, el)
+			ge.genElementField(w, el, d)
 		}
 	}
 	for _, attr := range ct.Attributes {
@@ -1562,7 +1589,7 @@ func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType) error {
 	return nil
 }
 
-func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element) {
+func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element, d *wsdl.Definitions) {
 	if el.Ref != "" {
 		ref := trimns(el.Ref)
 		nel, ok := ge.elements[ref]
@@ -1614,14 +1641,22 @@ func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element) {
 	typ := ge.wsdl2goType(et)
 	if el.Nillable || el.Min == 0 {
 		tag += ",omitempty"
-		//since we add omitempty tag, we should add pointer to type.
+		//since we add omitempty tag, we should add pointer to type if not an interface.
 		//thus xmlencoder can differ not-initialized fields from zero-initialized values
-		if !strings.HasPrefix(typ, "*") {
+		noPointerInterface := false
+		if t, exists := ge.ctypes[typ]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
+			noPointerInterface = true
+		}
+		if !strings.HasPrefix(typ, "*") && (!ge.noInterfacePointer || !noPointerInterface) {
 			typ = "*" + typ
 		}
 	}
-	fmt.Fprintf(w, "%s `xml:\"%s\" json:\"%s\" yaml:\"%s\"`\n",
-		typ, tag, tag, tag)
+	prefix := ""
+	if ge.inlineTargetNamespace {
+		prefix = d.TargetNamespace + " "
+	}
+	fmt.Fprintf(w, "%s `xml:\"%s%s\" json:\"%s\" yaml:\"%s\"`\n",
+		typ, prefix, tag, tag, tag)
 }
 
 func (ge *goEncoder) genAttributeField(w io.Writer, attr *wsdl.Attribute) {
@@ -1673,4 +1708,14 @@ func (ge *goEncoder) writeComments(w io.Writer, typeName, comment string) {
 // SetLocalNamespace allows overridding of namespace in XMLName
 func (ge *goEncoder) SetLocalNamespace(s string) {
 	ge.localNamespace = s
+}
+
+// SetInlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
+func (ge *goEncoder) SetInlineTargetNamespace(inline bool) {
+	ge.inlineTargetNamespace = inline
+}
+
+// SetNoInterfacePointer generates interface types without pointer
+func (ge *goEncoder) SetNoInterfacePointer(noInterfacePointer bool) {
+	ge.noInterfacePointer = noInterfacePointer
 }

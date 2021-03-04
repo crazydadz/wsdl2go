@@ -119,17 +119,19 @@ type Enum struct {
 
 // ComplexType describes a complex type, such as a struct.
 type ComplexType struct {
-	XMLName         xml.Name        `xml:"complexType"`
-	Name            string          `xml:"name,attr"`
-	Abstract        bool            `xml:"abstract,attr"`
-	Doc             string          `xml:"annotation>documentation"`
-	AllElements     []*Element      `xml:"all>element"`
-	ComplexContent  *ComplexContent `xml:"complexContent"`
-	SimpleContent   *SimpleContent  `xml:"simpleContent"`
-	Sequence        *Sequence       `xml:"sequence"`
-	Choice          *Choice         `xml:"choice"`
-	Attributes      []*Attribute    `xml:"attribute"`
-	TargetNamespace string
+	XMLName                xml.Name        `xml:"complexType"`
+	Name                   string          `xml:"name,attr"`
+	Abstract               bool            `xml:"abstract,attr"`
+	Doc                    string          `xml:"annotation>documentation"`
+	AllElements            []*Element      `xml:"all>element"`
+	ComplexContent         *ComplexContent `xml:"complexContent"`
+	SimpleContent          *SimpleContent  `xml:"simpleContent"`
+	Sequence               *Sequence       `xml:"sequence"`
+	Choice                 *Choice         `xml:"choice"`
+	Attributes             []*Attribute    `xml:"attribute"`
+	TargetNamespace        string
+	IsGoInterfaceType      bool
+	IsGoInterfaceSliceType bool
 }
 
 // SimpleContent describes simple content within a complex type.
