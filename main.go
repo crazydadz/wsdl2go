@@ -26,7 +26,6 @@ type options struct {
 	ClientKeyFile         string
 	Version               bool
 	InlineTargetNamespace bool
-	NoInterfacePointer    bool
 }
 
 func main() {
@@ -38,7 +37,6 @@ func main() {
 	flag.StringVar(&opts.Package, "p", opts.Package, "package name")
 	flag.BoolVar(&opts.Insecure, "yolo", opts.Insecure, "accept invalid https certificates")
 	flag.BoolVar(&opts.InlineTargetNamespace, "inline-ns", opts.InlineTargetNamespace, "inline target namespace on elements")
-	flag.BoolVar(&opts.NoInterfacePointer, "no-interface-pointer", opts.NoInterfacePointer, "no interface pointer")
 	flag.StringVar(&opts.ClientCertFile, "cert", opts.ClientCertFile, "use client TLS cert file")
 	flag.StringVar(&opts.ClientKeyFile, "key", opts.ClientKeyFile, "use client TLS key file")
 	flag.BoolVar(&opts.Version, "version", opts.Version, "show version and exit")
@@ -91,7 +89,6 @@ func codegen(w io.Writer, opts options, cli *http.Client) error {
 		enc.SetLocalNamespace(opts.Namespace)
 	}
 	enc.SetInlineTargetNamespace(opts.InlineTargetNamespace)
-	enc.SetNoInterfacePointer(opts.NoInterfacePointer)
 
 	return enc.Encode(d)
 }

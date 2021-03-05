@@ -49,9 +49,6 @@ type Encoder interface {
 
 	// SetInlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
 	SetInlineTargetNamespace(inline bool)
-
-	// SetNoInterfacePointer generates interface types without pointer
-	SetNoInterfacePointer(noInterfacePointer bool)
 }
 
 type goEncoder struct {
@@ -97,9 +94,6 @@ type goEncoder struct {
 
 	// inlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
 	inlineTargetNamespace bool
-
-	// noInterfacePointer generates interface types without pointer
-	noInterfacePointer bool
 }
 
 // NewEncoder creates and initializes an Encoder that generates code to w.
@@ -1068,7 +1062,7 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 		return "interface{}"
 	default:
 		// no interface pointer
-		if t, exists := ge.ctypes[v]; ge.noInterfacePointer && exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
+		if t, exists := ge.ctypes[v]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
 			return goSymbol(v)
 		}
 		return "*" + goSymbol(v)
@@ -1643,11 +1637,11 @@ func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element, d *wsdl.Defi
 		tag += ",omitempty"
 		//since we add omitempty tag, we should add pointer to type if not an interface.
 		//thus xmlencoder can differ not-initialized fields from zero-initialized values
-		noPointerInterface := false
+		isGoInterfaceType := false
 		if t, exists := ge.ctypes[typ]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
-			noPointerInterface = true
+			isGoInterfaceType = true
 		}
-		if !strings.HasPrefix(typ, "*") && (!ge.noInterfacePointer || !noPointerInterface) {
+		if !strings.HasPrefix(typ, "*") && !isGoInterfaceType {
 			typ = "*" + typ
 		}
 	}
@@ -1713,9 +1707,4 @@ func (ge *goEncoder) SetLocalNamespace(s string) {
 // SetInlineTargetNamespace allows to inline the TargetNamespace from wsdl on every element
 func (ge *goEncoder) SetInlineTargetNamespace(inline bool) {
 	ge.inlineTargetNamespace = inline
-}
-
-// SetNoInterfacePointer generates interface types without pointer
-func (ge *goEncoder) SetNoInterfacePointer(noInterfacePointer bool) {
-	ge.noInterfacePointer = noInterfacePointer
 }
