@@ -1235,9 +1235,13 @@ func (v {{.TypeName}}) Validate() bool {
 	for _, vv := range []{{.Type}} {
 		{{range .Args}}{{.}},{{"\n"}}{{end}}
 	}{
-		if reflect.DeepEqual(v, vv) {
+		if {{.Type}}(v) == vv {
 			return true
 		}
+		// Original Code
+		//if reflect.DeepEqual(v, vv) {
+		// 	return true
+		//}
 	}
 	return false
 }
