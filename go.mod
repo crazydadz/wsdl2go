@@ -1,4 +1,4 @@
-module github.com/fiorix/wsdl2go
+module github.com/crazydadz/wsdl2go
 
 go 1.15
 

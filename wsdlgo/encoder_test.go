@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fiorix/wsdl2go/wsdl"
+	"github.com/crazydadz/wsdl2go/wsdl"
 	"github.com/stretchr/testify/assert"
 )
 
