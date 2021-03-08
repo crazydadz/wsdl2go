@@ -130,6 +130,8 @@ type ComplexType struct {
 	Choice          *Choice         `xml:"choice"`
 	Attributes      []*Attribute    `xml:"attribute"`
 	TargetNamespace string
+	IsGoInterfaceType      bool
+	IsGoInterfaceSliceType bool
 }
 
 // SimpleContent describes simple content within a complex type.

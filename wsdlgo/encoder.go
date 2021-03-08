@@ -370,6 +370,25 @@ func (ge *goEncoder) cacheTypes(d *wsdl.Definitions) {
 	// cache elements from complex types
 	for _, ct := range ge.ctypes {
 		ge.cacheComplexTypeElements(ct)
+
+		// Identify go interface type
+		identifyGoInterfaceType(ct)
+	}
+}
+
+func identifyGoInterfaceType(ct *wsdl.ComplexType) {
+	if ct.Abstract {
+		ct.IsGoInterfaceType = true
+	}
+	if ct.Sequence != nil && ct.Sequence.Any != nil {
+		if len(ct.Sequence.Elements) == 0 {
+			ct.IsGoInterfaceSliceType = true
+		}
+	}
+	if ct.Choice != nil && ct.Choice.Any != nil {
+		if len(ct.Choice.Elements) == 0 {
+			ct.IsGoInterfaceSliceType = true
+		}
 	}
 }
 
@@ -1036,6 +1055,10 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	case "anysequence", "anytype", "anysimpletype":
 		return "interface{}"
 	default:
+		// do not add pointer on interface type
+		if t, exists := ge.ctypes[v]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
+			return goSymbol(v)
+		}
 		return "*" + goSymbol(v)
 	}
 }
@@ -1312,21 +1335,13 @@ func (ge *goEncoder) genGoStruct(w io.Writer, d *wsdl.Definitions, ct *wsdl.Comp
 
 	name := goSymbol(ct.Name)
 	ge.writeComments(w, name, ct.Doc)
-	if ct.Abstract {
+	if ct.IsGoInterfaceType {
 		fmt.Fprintf(w, "type %s interface{}\n\n", name)
 		return nil
 	}
-	if ct.Sequence != nil && ct.Sequence.Any != nil {
-		if len(ct.Sequence.Elements) == 0 {
-			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
-			return nil
-		}
-	}
-	if ct.Choice != nil && ct.Choice.Any != nil {
-		if len(ct.Choice.Elements) == 0 {
-			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
-			return nil
-		}
+	if ct.IsGoInterfaceSliceType {
+		fmt.Fprintf(w, "type %s []interface{}\n\n", name)
+		return nil
 	}
 	if ct.ComplexContent != nil {
 		restr := ct.ComplexContent.Restriction
@@ -1614,9 +1629,13 @@ func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element) {
 	typ := ge.wsdl2goType(et)
 	if el.Nillable || el.Min == 0 {
 		tag += ",omitempty"
-		//since we add omitempty tag, we should add pointer to type.
+		//since we add omitempty tag, we should add pointer to type if not an interface.
 		//thus xmlencoder can differ not-initialized fields from zero-initialized values
-		if !strings.HasPrefix(typ, "*") {
+		isGoInterfaceType := false
+		if t, exists := ge.ctypes[typ]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
+			isGoInterfaceType = true
+		}
+		if !strings.HasPrefix(typ, "*") && !isGoInterfaceType {
 			typ = "*" + typ
 		}
 	}
