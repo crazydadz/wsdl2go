@@ -46,6 +46,9 @@ type Encoder interface {
 	// SetLocalNamespace allows overriding of the Namespace in XMLName instead
 	// of the one specified in wsdl
 	SetLocalNamespace(namespace string)
+
+	// SetInlineTargetNamespace inlines the TargetNamespace from wsdl on every element
+	SetInlineTargetNamespace(inline bool)
 }
 
 type goEncoder struct {
@@ -88,6 +91,9 @@ type goEncoder struct {
 
 	// localNamespace allows overriding of namespace in XMLName
 	localNamespace string
+
+	// inlineTargetNamespace inlines the TargetNamespace from wsdl on every element
+	inlineTargetNamespace bool
 }
 
 // NewEncoder creates and initializes an Encoder that generates code to w.
@@ -1425,7 +1431,7 @@ func (ge *goEncoder) genStructFields(w io.Writer, d *wsdl.Definitions, ct *wsdl.
 		return err
 	}
 
-	return ge.genElements(w, ct)
+	return ge.genElements(w, ct, d)
 }
 
 func (ge *goEncoder) genOpStructMessage(w io.Writer, d *wsdl.Definitions, name string, message *wsdl.Message) {
@@ -1464,7 +1470,7 @@ func (ge *goEncoder) genOpStructMessage(w io.Writer, d *wsdl.Definitions, name s
 			Name:    partName,
 			Type:    wsdlType,
 			// TODO: Maybe one could make guesses about nillable?
-		})
+		}, d)
 	}
 
 	fmt.Fprintf(w, "}\n\n")
@@ -1509,13 +1515,13 @@ func (ge *goEncoder) genComplexContent(w io.Writer, d *wsdl.Definitions, ct *wsd
 	}
 	for _, seq := range sequences {
 		for _, v := range seq.ComplexTypes {
-			err := ge.genElements(w, v)
+			err := ge.genElements(w, v, d)
 			if err != nil {
 				return err
 			}
 		}
 		for _, v := range seq.Elements {
-			ge.genElementField(w, v)
+			ge.genElementField(w, v, d)
 		}
 
 	}
@@ -1540,7 +1546,7 @@ func (ge *goEncoder) genSimpleContent(w io.Writer, d *wsdl.Definitions, ct *wsdl
 			ge.genElementField(w, &wsdl.Element{
 				Type: trimns(ext.Base),
 				Name: "Content",
-			})
+			}, d)
 		}
 	}
 
@@ -1552,23 +1558,23 @@ func (ge *goEncoder) genSimpleContent(w io.Writer, d *wsdl.Definitions, ct *wsdl
 	return nil
 }
 
-func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType) error {
+func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType, d *wsdl.Definitions) error {
 	for _, el := range ct.AllElements {
-		ge.genElementField(w, el)
+		ge.genElementField(w, el, d)
 	}
 	if ct.Sequence != nil {
 		for _, el := range ct.Sequence.Elements {
-			ge.genElementField(w, el)
+			ge.genElementField(w, el, d)
 		}
 		for _, choice := range ct.Sequence.Choices {
 			for _, el := range choice.Elements {
-				ge.genElementField(w, el)
+				ge.genElementField(w, el, d)
 			}
 		}
 	}
 	if ct.Choice != nil {
 		for _, el := range ct.Choice.Elements {
-			ge.genElementField(w, el)
+			ge.genElementField(w, el, d)
 		}
 	}
 	for _, attr := range ct.Attributes {
@@ -1577,7 +1583,7 @@ func (ge *goEncoder) genElements(w io.Writer, ct *wsdl.ComplexType) error {
 	return nil
 }
 
-func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element) {
+func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element, d *wsdl.Definitions) {
 	if el.Ref != "" {
 		ref := trimns(el.Ref)
 		nel, ok := ge.elements[ref]
@@ -1639,8 +1645,12 @@ func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element) {
 			typ = "*" + typ
 		}
 	}
-	fmt.Fprintf(w, "%s `xml:\"%s\" json:\"%s\" yaml:\"%s\"`\n",
-		typ, tag, tag, tag)
+	prefix := ""
+	if ge.inlineTargetNamespace {
+		prefix = d.TargetNamespace + " "
+	}
+	fmt.Fprintf(w, "%s `xml:\"%s%s\" json:\"%s\" yaml:\"%s\"`\n",
+		typ, prefix, tag, tag, tag)
 }
 
 func (ge *goEncoder) genAttributeField(w io.Writer, attr *wsdl.Attribute) {
@@ -1692,4 +1702,9 @@ func (ge *goEncoder) writeComments(w io.Writer, typeName, comment string) {
 // SetLocalNamespace allows overridding of namespace in XMLName
 func (ge *goEncoder) SetLocalNamespace(s string) {
 	ge.localNamespace = s
+}
+
+// SetInlineTargetNamespace inlines the TargetNamespace from wsdl on every element
+func (ge *goEncoder) SetInlineTargetNamespace(inline bool) {
+	ge.inlineTargetNamespace = inline
 }

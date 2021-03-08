@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var boolTrue = true
+
 func LoadDefinition(t *testing.T, filename string, want error) *wsdl.Definitions {
 	f, err := os.Open(filepath.Join("testdata", filename))
 	if err != nil {
@@ -42,6 +44,7 @@ var EncoderCases = []struct {
 	F string
 	G string
 	E error
+	InlineNS *bool
 }{
 	{F: "broken.wsdl", E: io.EOF},
 	{F: "w3cexample1.wsdl", G: "w3cexample1.golden", E: nil},
@@ -59,6 +62,7 @@ var EncoderCases = []struct {
 	{F: "arrayexample.wsdl", G: "arrayexample.golden", E: nil},
 	{F: "radioreference.wsdl", G: "radioreference.golden", E: nil},
 	{F: "scannerservice.wsdl", G: "scannerservice.golden", E: nil},
+	{F: "w3example2.wsdl", G: "w3example2_inline_ns.golden", E: nil, InlineNS: &boolTrue},
 }
 
 func NewTestServer(t *testing.T) *httptest.Server {
@@ -83,7 +87,13 @@ func TestEncoder(t *testing.T) {
 		var err error
 		var want []byte
 		var have bytes.Buffer
-		err = NewEncoder(&have).Encode(d)
+		enc := NewEncoder(&have)
+
+		if tc.InlineNS != nil {
+			enc.SetInlineTargetNamespace(*tc.InlineNS)
+		}
+
+		err = enc.Encode(d)
 		if err != nil {
 			t.Errorf("test %d, encoding %q: %v", i, tc.F, err)
 		}
@@ -131,3 +141,4 @@ func Diff(prefix, ext string, a, b []byte) error {
 	}
 	return nil
 }
+
