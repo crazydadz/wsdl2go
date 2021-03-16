@@ -17,14 +17,14 @@ import (
 var version = "tip"
 
 type options struct {
-	Src            string
-	Dst            string
-	Package        string
-	Namespace      string
-	Insecure       bool
-	ClientCertFile string
-	ClientKeyFile  string
-	Version        bool
+	Src                   string
+	Dst                   string
+	Package               string
+	Namespace             string
+	Insecure              bool
+	ClientCertFile        string
+	ClientKeyFile         string
+	Version               bool
 	InlineTargetNamespace bool
 }
 

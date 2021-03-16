@@ -197,6 +197,19 @@ func (ge *goEncoder) Encode(d *wsdl.Definitions) error {
 	return nil
 }
 
+func (ge *goEncoder) resolveDerivedTypes(t *wsdl.ComplexType, typeToSet *wsdl.ComplexType) {
+	if t.ComplexContent != nil && t.ComplexContent.Extension != nil && t.ComplexContent.Extension.Base != "" {
+		base, exists := ge.ctypes[trimns(t.ComplexContent.Extension.Base)]
+		if exists {
+			if base.DerivedTypes == nil {
+				base.DerivedTypes = make(map[string]*wsdl.ComplexType)
+			}
+			base.DerivedTypes[typeToSet.Name] = typeToSet
+			ge.resolveDerivedTypes(base, typeToSet)
+		}
+	}
+}
+
 func (ge *goEncoder) encode(w io.Writer, d *wsdl.Definitions) error {
 	ge.unionSchemasData(d, &d.Schema)
 	err := ge.importParts(d)
@@ -377,24 +390,8 @@ func (ge *goEncoder) cacheTypes(d *wsdl.Definitions) {
 	for _, ct := range ge.ctypes {
 		ge.cacheComplexTypeElements(ct)
 
-		// Identify go interface type
-		identifyGoInterfaceType(ct)
-	}
-}
-
-func identifyGoInterfaceType(ct *wsdl.ComplexType) {
-	if ct.Abstract {
-		ct.IsGoInterfaceType = true
-	}
-	if ct.Sequence != nil && ct.Sequence.Any != nil {
-		if len(ct.Sequence.Elements) == 0 {
-			ct.IsGoInterfaceSliceType = true
-		}
-	}
-	if ct.Choice != nil && ct.Choice.Any != nil {
-		if len(ct.Choice.Elements) == 0 {
-			ct.IsGoInterfaceSliceType = true
-		}
+		// Set ConcreteTypes
+		ge.resolveDerivedTypes(ct, ct)
 	}
 }
 
@@ -1061,10 +1058,6 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	case "anysequence", "anytype", "anysimpletype":
 		return "interface{}"
 	default:
-		// do not add pointer on interface type
-		if t, exists := ge.ctypes[v]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
-			return goSymbol(v)
-		}
 		return "*" + goSymbol(v)
 	}
 }
@@ -1345,13 +1338,20 @@ func (ge *goEncoder) genGoStruct(w io.Writer, d *wsdl.Definitions, ct *wsdl.Comp
 
 	name := goSymbol(ct.Name)
 	ge.writeComments(w, name, ct.Doc)
-	if ct.IsGoInterfaceType {
-		fmt.Fprintf(w, "type %s interface{}\n\n", name)
-		return nil
+	if ct.Abstract {
+		return ge.genAbstractGoStruct(w, ct)
 	}
-	if ct.IsGoInterfaceSliceType {
-		fmt.Fprintf(w, "type %s []interface{}\n\n", name)
-		return nil
+	if ct.Sequence != nil && ct.Sequence.Any != nil {
+		if len(ct.Sequence.Elements) == 0 {
+			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
+			return nil
+		}
+	}
+	if ct.Choice != nil && ct.Choice.Any != nil {
+		if len(ct.Choice.Elements) == 0 {
+			fmt.Fprintf(w, "type %s []interface{}\n\n", name)
+			return nil
+		}
 	}
 	if ct.ComplexContent != nil {
 		restr := ct.ComplexContent.Restriction
@@ -1387,6 +1387,59 @@ func (ge *goEncoder) genGoStruct(w io.Writer, d *wsdl.Definitions, ct *wsdl.Comp
 	}
 	fmt.Fprintf(w, "}\n\n")
 	return nil
+}
+
+var abstractT = template.Must(template.New("baseTypes").Parse(`type {{.TypeName}} struct {
+	Value interface{}
+	TypeAttrXSI   string ` + "`xml:\"xsi:type,attr,omitempty\"`" + `
+	TypeNamespace string ` + "`xml:\"xmlns:objtype,attr,omitempty\"`" + `
+}
+
+// SetXMLType copy TypeAttr and TypeNamespace from its Value field
+func (t *{{.TypeName}}) SetXMLType() {
+	xmlTyper, ok := t.Value.(soap.XMLTyper)
+	if ok {
+		xmlTyper.SetXMLType()
+		{{if .ConcreteTypes}}switch v := t.Value.(type) {
+			{{range .ConcreteTypes}}case {{.}}:{{"\n"}}t.TypeAttrXSI = v.TypeAttrXSI{{"\n"}}t.TypeNamespace = v.TypeNamespace{{"\n"}}{{end}}}{{end}}
+	}
+}
+
+// MarshalXML for {{.TypeName}}.
+func (t *{{.TypeName}}) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	return e.EncodeElement(t.Value, start)
+}
+
+// UnmarshalXML for {{.TypeName}}.
+func (t *{{.TypeName}}) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	tt := {{.TypeName}}{}
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "type" {
+			switch attr.Value {
+			{{range .ConcreteTypes}}case "{{.}}":{{"\n"}}tt.Value = new({{.}}){{"\n"}}{{end}}}
+			d.DecodeElement(tt.Value, &start)
+		}
+	}
+	*t = tt
+	return nil
+}
+`))
+
+func (ge *goEncoder) genAbstractGoStruct(w io.Writer, ct *wsdl.ComplexType) error {
+	var data struct {
+		TypeName      string
+		ConcreteTypes []string
+	}
+
+	data.TypeName = ct.Name
+	data.ConcreteTypes = make([]string, 0)
+	for _, t := range ct.DerivedTypes {
+		if !t.Abstract {
+			data.ConcreteTypes = append(data.ConcreteTypes, t.Name)
+		}
+	}
+
+	return abstractT.Execute(w, &data)
 }
 
 func (ge *goEncoder) genGoOpStruct(w io.Writer, d *wsdl.Definitions, bo *wsdl.BindingOperation) error {
@@ -1639,13 +1692,9 @@ func (ge *goEncoder) genElementField(w io.Writer, el *wsdl.Element, d *wsdl.Defi
 	typ := ge.wsdl2goType(et)
 	if el.Nillable || el.Min == 0 {
 		tag += ",omitempty"
-		//since we add omitempty tag, we should add pointer to type if not an interface.
+		//since we add omitempty tag, we should add pointer to type.
 		//thus xmlencoder can differ not-initialized fields from zero-initialized values
-		isGoInterfaceType := false
-		if t, exists := ge.ctypes[typ]; exists && (t.IsGoInterfaceType || t.IsGoInterfaceSliceType) {
-			isGoInterfaceType = true
-		}
-		if !strings.HasPrefix(typ, "*") && !isGoInterfaceType {
+		if !strings.HasPrefix(typ, "*") {
 			typ = "*" + typ
 		}
 	}

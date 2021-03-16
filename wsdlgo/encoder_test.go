@@ -41,9 +41,9 @@ func LoadDefinition(t *testing.T, filename string, want error) *wsdl.Definitions
 }
 
 var EncoderCases = []struct {
-	F string
-	G string
-	E error
+	F        string
+	G        string
+	E        error
 	InlineNS *bool
 }{
 	{F: "broken.wsdl", E: io.EOF},
@@ -141,4 +141,3 @@ func Diff(prefix, ext string, a, b []byte) error {
 	}
 	return nil
 }
-
