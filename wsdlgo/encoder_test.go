@@ -63,6 +63,7 @@ var EncoderCases = []struct {
 	{F: "radioreference.wsdl", G: "radioreference.golden", E: nil},
 	{F: "scannerservice.wsdl", G: "scannerservice.golden", E: nil},
 	{F: "w3example2.wsdl", G: "w3example2_inline_ns.golden", E: nil, InlineNS: &boolTrue},
+	{F: "google_creative_service.wsdl", G: "google_creative_service.golden", E: nil, InlineNS: &boolTrue},
 }
 
 func NewTestServer(t *testing.T) *httptest.Server {

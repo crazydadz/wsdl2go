@@ -1018,6 +1018,12 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	if _, exists := ge.stypes[v]; exists {
 		return goSymbol(v)
 	}
+
+	definedByWSDL := false
+	if _, exists := ge.ctypes[v]; exists {
+		definedByWSDL = true
+	}
+
 	switch strings.ToLower(v) {
 	case "byte", "unsignedbyte":
 		return "byte"
@@ -1036,10 +1042,10 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	case "string", "anyuri", "token", "nmtoken", "qname", "language", "id":
 		return "string"
 	case "date":
-		ge.needsDateType = true
+		ge.needsDateType = !definedByWSDL
 		return "Date"
 	case "time":
-		ge.needsTimeType = true
+		ge.needsTimeType = !definedByWSDL
 		return "Time"
 	case "nonnegativeinteger":
 		return "uint"
@@ -1050,10 +1056,10 @@ func (ge *goEncoder) wsdl2goType(t string) string {
 	case "unsignedint":
 		return "uint"
 	case "datetime":
-		ge.needsDateTimeType = true
+		ge.needsDateTimeType = !definedByWSDL
 		return "DateTime"
 	case "duration":
-		ge.needsDurationType = true
+		ge.needsDurationType = !definedByWSDL
 		return "Duration"
 	case "anysequence", "anytype", "anysimpletype":
 		return "interface{}"
@@ -1253,7 +1259,7 @@ func (ge *goEncoder) genValidator(w io.Writer, typeName string, r *wsdl.Restrict
 			args[i] = v.Value
 		}
 	}
-	ge.needsStdPkg["reflect"] = true
+	//ge.needsStdPkg["reflect"] = true
 	validatorT.Execute(w, &struct {
 		TypeName string
 		Type     string
@@ -1426,6 +1432,8 @@ func (t *{{.TypeName}}) UnmarshalXML(d *xml.Decoder, start xml.StartElement) err
 `))
 
 func (ge *goEncoder) genAbstractGoStruct(w io.Writer, ct *wsdl.ComplexType) error {
+	ge.needsStdPkg["encoding/xml"] = true
+
 	var data struct {
 		TypeName      string
 		ConcreteTypes []string
@@ -1438,6 +1446,7 @@ func (ge *goEncoder) genAbstractGoStruct(w io.Writer, ct *wsdl.ComplexType) erro
 			data.ConcreteTypes = append(data.ConcreteTypes, t.Name)
 		}
 	}
+	sort.Strings(data.ConcreteTypes)
 
 	return abstractT.Execute(w, &data)
 }
